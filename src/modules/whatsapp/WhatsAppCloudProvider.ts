@@ -61,7 +61,7 @@ export class WhatsAppCloudProvider implements WhatsAppProvider {
 
     const metadata = (await meta.json()) as { url?: string; mime_type?: string };
     if (!metadata.url) {
-      throw new Error("WhatsApp media metadata did not include an URL");
+      throw new Error("WhatsApp media metadata did not include a URL");
     }
 
     const media = await fetch(metadata.url, {
