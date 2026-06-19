@@ -37,24 +37,103 @@ tests/
 prisma/
 ```
 
-## Configuracion
+## Configuracion del `.env`
 
-Copiar `.env.example` a `.env` y completar:
+El archivo `.env` contiene credenciales reales y configuracion local, por eso no se commitea. Para preparar el entorno desde cero:
 
 ```bash
 cp .env.example .env
 ```
 
-Variables principales:
+En Windows PowerShell:
 
-- `DATABASE_URL`: PostgreSQL.
-- `ADMIN_API_KEY`: requerido para endpoints `/admin`.
-- `ADMIN_PHONE`: requerido si `ALERTS_ENABLED=true`.
-- `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`.
-- `OPENAI_API_KEY`.
-- `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `GOOGLE_CALENDAR_ID`.
-- `STRICT_PREFLIGHT`: si es `true`, el servidor no levanta con dependencias rotas.
-- `AUTO_REPLY`: si es `true`, responde al cliente por WhatsApp; si es `false`, guarda respuesta sugerida y alerta al admin.
+```powershell
+Copy-Item .env.example .env
+```
+
+Despues abrir `.env` con cualquier editor y reemplazar los valores `change-me`.
+
+### Configuracion minima para desarrollo local
+
+Usar esta base si la app corre con `npm run dev` en la maquina y PostgreSQL corre con Docker:
+
+```env
+NODE_ENV=development
+PORT=3000
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/whatsapp_calendar
+
+ADMIN_API_KEY=replace-with-a-long-random-secret
+ADMIN_PHONE=5491111111111
+ALERTS_ENABLED=false
+AUTO_REPLY=false
+STRICT_PREFLIGHT=false
+HEALTHCHECK_INTERVAL_MINUTES=5
+
+WHATSAPP_PROVIDER=cloud
+WHATSAPP_VERIFY_TOKEN=replace-with-your-meta-webhook-token
+WHATSAPP_ACCESS_TOKEN=replace-with-your-meta-access-token
+WHATSAPP_PHONE_NUMBER_ID=replace-with-your-phone-number-id
+WHATSAPP_BUSINESS_ACCOUNT_ID=replace-with-your-business-account-id
+
+OPENAI_API_KEY=replace-with-your-openai-key
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+OPENAI_EXTRACTION_MODEL=gpt-4.1-mini
+
+GOOGLE_CLIENT_EMAIL=calendar-service-account@example.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
+GOOGLE_CALENDAR_ID=primary
+DEFAULT_TIMEZONE=America/Argentina/Buenos_Aires
+DEFAULT_DURATION_MINUTES=60
+
+AUDIO_STORAGE_ENABLED=false
+```
+
+Para correr app y base de datos dentro de `docker compose`, cambiar solamente `DATABASE_URL` para que apunte al servicio `postgres`:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/whatsapp_calendar
+```
+
+### Como completar cada valor
+
+- `DATABASE_URL`: conexion de PostgreSQL. Usar `localhost` si la app corre fuera de Docker; usar `postgres` si corre dentro de `docker compose`.
+- `ADMIN_API_KEY`: secreto largo para proteger endpoints `/admin`. Enviar en el header `x-admin-api-key`.
+- `ADMIN_PHONE`: telefono WhatsApp del administrador, con codigo de pais, sin `+`. Es obligatorio si `ALERTS_ENABLED=true`.
+- `ALERTS_ENABLED`: `true` envia alertas; `false` solo deja logs.
+- `AUTO_REPLY`: `true` permite responder al cliente por WhatsApp; `false` no envia mensajes automaticos al cliente.
+- `STRICT_PREFLIGHT`: `true` bloquea el inicio si una dependencia falla; `false` permite iniciar en modo degraded. Para primera configuracion conviene `false`.
+- `WHATSAPP_VERIFY_TOKEN`: token propio que tambien se configura en Meta para validar el webhook.
+- `WHATSAPP_ACCESS_TOKEN`: token de WhatsApp Business Cloud API.
+- `WHATSAPP_PHONE_NUMBER_ID`: id del numero de telefono de WhatsApp Cloud API.
+- `WHATSAPP_BUSINESS_ACCOUNT_ID`: id del WhatsApp Business Account.
+- `OPENAI_API_KEY`: API key de OpenAI.
+- `OPENAI_TRANSCRIPTION_MODEL`: modelo usado para transcribir audios.
+- `OPENAI_EXTRACTION_MODEL`: modelo usado para extraer datos estructurados de agenda.
+- `GOOGLE_CLIENT_EMAIL`: email de la service account de Google Cloud.
+- `GOOGLE_PRIVATE_KEY`: private key de la service account. Debe ir entre comillas y con saltos de linea como `\n`.
+- `GOOGLE_CALENDAR_ID`: id del calendario. Puede ser `primary` o el id real del calendario compartido con la service account.
+- `DEFAULT_TIMEZONE`: zona horaria usada para resolver fechas relativas.
+- `DEFAULT_DURATION_MINUTES`: duracion default de la clase/reunion.
+- `AUDIO_STORAGE_ENABLED`: `false` evita guardar audios permanentemente; `true` habilita almacenamiento local.
+
+### Validar que quedo bien
+
+Para desarrollo local:
+
+```bash
+docker compose up -d postgres
+npm run prisma:migrate
+npm run dev
+```
+
+Luego probar:
+
+```bash
+curl http://localhost:3000/health
+curl http://localhost:3000/ready
+```
+
+`/health` debe responder `ok` sin consultar servicios externos. `/ready` puede responder `degraded` mientras falten credenciales reales de OpenAI, Google Calendar o WhatsApp.
 
 ## Local
 
