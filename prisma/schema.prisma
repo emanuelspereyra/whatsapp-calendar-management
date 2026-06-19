@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConversationStatus {
+  idle
+  collecting_information
+  pending_confirmation
+  missing_information
+  confirmed_ready_to_schedule
+  scheduled
+  cancelled
+  failed
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+  system
+}
+
+enum MessageType {
+  text
+  audio
+  system
+}
+
+enum CalendarEventStatus {
+  created
+  conflict
+  failed
+  cancelled
+}
+
+enum HealthStatus {
+  ok
+  degraded
+  down
+}
+
+model Client {
+  id            String         @id @default(uuid())
+  phone         String         @unique
+  name          String?
+  email         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+}
+
+model Conversation {
+  id                      String             @id @default(uuid())
+  clientId                String
+  status                  ConversationStatus @default(idle)
+  lastIntent              String?
+  proposedDate            String?
+  proposedTime            String?
+  proposedDurationMinutes Int?
+  proposedTopic           String?
+  suggestedReply          String?
+  lastError               String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  client                  Client             @relation(fields: [clientId], references: [id])
+  messages                Message[]
+  calendarEvents          CalendarEvent[]
+
+  @@index([clientId, status])
+}
+
+model Message {
+  id             String           @id @default(uuid())
+  conversationId String
+  direction      MessageDirection
+  type           MessageType
+  rawText        String?
+  transcription  String?
+  mediaId        String?
+  timestamp      DateTime
+  createdAt      DateTime         @default(now())
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, timestamp])
+}
+
+model CalendarEvent {
+  id             String              @id @default(uuid())
+  conversationId String
+  googleEventId  String?
+  title          String
+  description    String
+  startDateTime  DateTime
+  endDateTime    DateTime
+  status         CalendarEventStatus
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  conversation   Conversation        @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+}
+
+model HealthCheckLog {
+  id          String       @id @default(uuid())
+  serviceName String
+  status      HealthStatus
+  message     String
+  checkedAt   DateTime     @default(now())
+
+  @@index([serviceName, checkedAt])
+}
