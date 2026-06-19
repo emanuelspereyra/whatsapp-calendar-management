@@ -55,7 +55,7 @@ function requireAdminApiKey(config: AppConfig) {
 }
 
 function adminRateLimit(req: Request, _res: Response, next: NextFunction) {
-  const key = `${req.ip}:${req.header("x-admin-api-key") ?? "missing"}`;
+  const key = String(req.ip ?? "unknown");
   const now = Date.now();
   const windowMs = 60_000;
   const current = requestCounts.get(key);
