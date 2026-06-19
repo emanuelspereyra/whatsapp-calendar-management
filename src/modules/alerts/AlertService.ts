@@ -23,7 +23,7 @@ export class AlertService {
   async notify(input: AlertInput): Promise<void> {
     if (!this.config.alertsEnabled) return;
     const timestamp = input.timestamp ?? new Date();
-    const message = `Healthcheck fallo: ${input.serviceName}. Estado: ${input.status}. Error: ${
+    const message = `Alerta: ${input.serviceName}. Estado: ${input.status}. Detalle: ${
       input.error ?? input.message
     }. Timestamp: ${timestamp.toISOString()}`;
 
