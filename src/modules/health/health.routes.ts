@@ -15,7 +15,7 @@ export function createHealthRouter(health: HealthService): Router {
 
   router.get("/ready", async (_req, res, next) => {
     try {
-      const result = await health.readiness();
+      const result = await health.readiness({ withSideEffects: false });
       const statusCode = result.status === "ok" ? 200 : result.status === "degraded" ? 200 : 503;
       res.status(statusCode).json(result);
     } catch (error) {

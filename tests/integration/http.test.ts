@@ -74,6 +74,14 @@ describe("HTTP routes", () => {
     expect(response.body.services.openai).toBe("down");
   });
 
+  it("/ready does not persist health logs for probe traffic", async () => {
+    const { app, deps } = buildAppHarness();
+
+    await request(app).get("/ready");
+
+    expect(deps.prisma.healthCheckLog.create).not.toHaveBeenCalled();
+  });
+
   it("rejects admin endpoints without ADMIN_API_KEY", async () => {
     const { app } = buildAppHarness();
 

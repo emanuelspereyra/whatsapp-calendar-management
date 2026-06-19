@@ -33,7 +33,8 @@ export class HealthService {
     };
   }
 
-  async readiness(): Promise<ReadinessResult> {
+  async readiness(options: { withSideEffects?: boolean } = {}): Promise<ReadinessResult> {
+    const { withSideEffects = true } = options;
     const database = await this.checkDatabase();
     const [openai, googleCalendar, whatsapp] = await Promise.all([
       this.ai.healthCheck(),
@@ -54,8 +55,10 @@ export class HealthService {
       whatsapp: whatsapp.message
     };
 
-    await this.persistLogs({ database, openai, googleCalendar, whatsapp });
-    await this.alertFailures({ database, openai, googleCalendar, whatsapp });
+    if (withSideEffects) {
+      await this.persistLogs({ database, openai, googleCalendar, whatsapp });
+      await this.alertFailures({ database, openai, googleCalendar, whatsapp });
+    }
 
     return {
       status: overallStatus(Object.values(services)),
