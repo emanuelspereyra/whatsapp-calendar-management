@@ -61,7 +61,7 @@ export class HealthService {
     }
 
     return {
-      status: overallStatus(Object.values(services)),
+      status: overallStatus(services),
       services,
       messages
     };
@@ -105,8 +105,9 @@ export class HealthService {
   }
 }
 
-export function overallStatus(statuses: ServiceStatus[]): ServiceStatus {
-  if (statuses.every((status) => status === "ok")) return "ok";
-  if (statuses.some((status) => status === "down")) return "down";
+export function overallStatus(statuses: ReadinessResult["services"]): ServiceStatus {
+  if (statuses.database === "down") return "down";
+  const serviceStatuses = Object.values(statuses);
+  if (serviceStatuses.every((status) => status === "ok")) return "ok";
   return "degraded";
 }

@@ -74,6 +74,34 @@ describe("HTTP routes", () => {
     expect(response.body.services.openai).toBe("down");
   });
 
+  it("/ready returns down if the database is unavailable", async () => {
+    const config = testConfig();
+    const conversationHarness = buildConversationHarness(config);
+    const prisma = fakePrisma(false);
+    const health = new HealthService(
+      prisma,
+      conversationHarness.ai,
+      conversationHarness.calendar,
+      conversationHarness.whatsapp,
+      conversationHarness.alerts
+    );
+    const app = createApp(config, {
+      prisma,
+      whatsapp: conversationHarness.whatsapp,
+      ai: conversationHarness.ai,
+      calendar: conversationHarness.calendar,
+      conversationsRepository: conversationHarness.repo,
+      alerts: conversationHarness.alerts,
+      health,
+      conversations: conversationHarness.service
+    });
+
+    const response = await request(app).get("/ready").expect(503);
+
+    expect(response.body.status).toBe("down");
+    expect(response.body.services.database).toBe("down");
+  });
+
   it("/ready does not persist health logs for probe traffic", async () => {
     const { app, deps } = buildAppHarness();
 
