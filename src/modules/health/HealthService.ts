@@ -104,6 +104,6 @@ export class HealthService {
 
 export function overallStatus(statuses: ServiceStatus[]): ServiceStatus {
   if (statuses.every((status) => status === "ok")) return "ok";
-  if (statuses[0] === "down") return "down";
+  if (statuses.some((status) => status === "down")) return "down";
   return "degraded";
 }
