@@ -5,7 +5,7 @@ RUN npm ci
 
 FROM node:22-alpine AS build
 WORKDIR /app
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build
 
