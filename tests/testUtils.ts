@@ -5,7 +5,10 @@ import { AlertService } from "../src/modules/alerts/AlertService";
 import type { CalendarService } from "../src/modules/calendar/GoogleCalendarService";
 import type {
   CalendarEventCreate,
+  CalendarEventRecord,
   ClientRecord,
+  ConversationListFilter,
+  ConversationListResult,
   ConversationRecord,
   ConversationRepository,
   ConversationUpdate,
@@ -13,6 +16,9 @@ import type {
   MessageRecord
 } from "../src/modules/conversations/ConversationRepository";
 import { ConversationService } from "../src/modules/conversations/ConversationService";
+import { AuthService } from "../src/modules/auth/AuthService";
+import type { UserRecord, UserRepository, UserSummary } from "../src/modules/auth/UserRepository";
+import { InMemoryRateLimiter } from "../src/modules/ratelimit/RateLimiter";
 import type { AiService } from "../src/modules/openai/OpenAiService";
 import type { SchedulingIntent } from "../src/modules/openai/schemas";
 import type { DownloadedMedia, WhatsAppProvider } from "../src/modules/whatsapp/WhatsAppProvider";
@@ -26,6 +32,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       DATABASE_URL: "postgresql://test",
       ADMIN_API_KEY: "admin-key",
       ADMIN_PHONE: "5491111111111",
+      JWT_SECRET: "test-jwt-secret",
+      REGISTRATION_CODE: "invite-code",
       ALERTS_ENABLED: "true",
       AUTO_REPLY: "false",
       STRICT_PREFLIGHT: "true",
@@ -94,6 +102,8 @@ export class InMemoryConversationRepository implements ConversationRepository {
       proposedTopic: null,
       suggestedReply: null,
       lastError: null,
+      approvedByUserId: null,
+      rejectedByUserId: null,
       client
     };
     this.conversations.set(conversation.id, conversation);
@@ -102,6 +112,17 @@ export class InMemoryConversationRepository implements ConversationRepository {
 
   async findConversationById(id: string): Promise<ConversationRecord | null> {
     return this.conversations.get(id) ?? null;
+  }
+
+  async listConversations(filter: ConversationListFilter): Promise<ConversationListResult> {
+    let data = [...this.conversations.values()];
+    if (filter.status?.length) {
+      data = data.filter((conversation) => filter.status!.includes(conversation.status));
+    }
+    const total = data.length;
+    const skip = filter.skip ?? 0;
+    const take = filter.take ?? 20;
+    return { data: data.slice(skip, skip + take), total };
   }
 
   async updateConversation(id: string, data: ConversationUpdate): Promise<ConversationRecord> {
@@ -134,6 +155,62 @@ export class InMemoryConversationRepository implements ConversationRepository {
 
   async createCalendarEvent(input: CalendarEventCreate): Promise<void> {
     this.calendarEvents.push(input);
+  }
+
+  async listRecentCalendarEvents(limit: number): Promise<CalendarEventRecord[]> {
+    return this.calendarEvents
+      .slice(-limit)
+      .reverse()
+      .map((event, index) => ({
+        id: `event-${index + 1}`,
+        conversationId: event.conversationId,
+        googleEventId: event.googleEventId ?? null,
+        title: event.title,
+        startDateTime: event.startDateTime,
+        endDateTime: event.endDateTime,
+        status: event.status,
+        createdAt: new Date(),
+        client: this.conversations.get(event.conversationId)?.client
+      }));
+  }
+}
+
+export class InMemoryUserRepository implements UserRepository {
+  users: UserRecord[] = [];
+
+  async findById(id: string): Promise<UserRecord | null> {
+    return this.users.find((user) => user.id === id) ?? null;
+  }
+
+  async findByUsername(username: string): Promise<UserRecord | null> {
+    return this.users.find((user) => user.username === username) ?? null;
+  }
+
+  async countUsers(): Promise<number> {
+    return this.users.length;
+  }
+
+  async createUser(username: string, passwordHash: string, role: string): Promise<UserRecord> {
+    const user: UserRecord = { id: `user-${this.users.length + 1}`, username, passwordHash, role, tokenVersion: 0 };
+    this.users.push(user);
+    return user;
+  }
+
+  async listUsers(): Promise<UserSummary[]> {
+    return this.users.map((user) => ({ id: user.id, username: user.username, role: user.role, createdAt: new Date() }));
+  }
+
+  async updateRole(id: string, role: string): Promise<UserSummary> {
+    const user = this.users.find((u) => u.id === id);
+    if (!user) throw new Error(`missing user ${id}`);
+    user.role = role;
+    return { id: user.id, username: user.username, role: user.role, createdAt: new Date() };
+  }
+
+  async incrementTokenVersion(id: string): Promise<void> {
+    const user = this.users.find((u) => u.id === id);
+    if (!user) throw new Error(`missing user ${id}`);
+    user.tokenVersion += 1;
   }
 }
 
@@ -184,6 +261,7 @@ export class CapturingAlertProvider implements AlertProvider {
 
 export function buildConversationHarness(config: AppConfig = testConfig()) {
   const repo = new InMemoryConversationRepository();
+  const usersRepo = new InMemoryUserRepository();
   const whatsapp = new FakeWhatsAppProvider();
   const ai = new FakeAiService();
   const calendar = new FakeCalendarService();
@@ -191,7 +269,9 @@ export function buildConversationHarness(config: AppConfig = testConfig()) {
   const fallbackAlerts = new CapturingAlertProvider();
   const alerts = new AlertService(config, primaryAlerts, fallbackAlerts);
   const service = new ConversationService(config, repo, ai, calendar, whatsapp, alerts);
-  return { config, repo, whatsapp, ai, calendar, primaryAlerts, fallbackAlerts, alerts, service };
+  const auth = new AuthService(config, usersRepo);
+  const rateLimiter = new InMemoryRateLimiter();
+  return { config, repo, usersRepo, whatsapp, ai, calendar, primaryAlerts, fallbackAlerts, alerts, service, auth, rateLimiter };
 }
 
 export function textRecord(text = "Si, confirmado. Quiero ver Playwright e IA aplicada a QA.") {

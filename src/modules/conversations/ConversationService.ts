@@ -7,7 +7,13 @@ import type { CalendarEventInput, CalendarService } from "../calendar/GoogleCale
 import type { AiService } from "../openai/OpenAiService";
 import type { SchedulingIntent } from "../openai/schemas";
 import type { NormalizedWhatsAppMessage, WhatsAppProvider } from "../whatsapp/WhatsAppProvider";
-import type { ConversationRecord, ConversationRepository } from "./ConversationRepository";
+import type {
+  CalendarEventRecord,
+  ConversationListFilter,
+  ConversationListResult,
+  ConversationRecord,
+  ConversationRepository
+} from "./ConversationRepository";
 
 const RECENT_MESSAGE_LIMIT = 12;
 
@@ -18,6 +24,8 @@ export type ProcessingResult = {
   calendarEventCreated?: boolean;
   suggestedReply?: string;
 };
+
+export type CalendarEventView = CalendarEventRecord & { calendarLink: string | null };
 
 export class ConversationService {
   constructor(
@@ -86,8 +94,11 @@ export class ConversationService {
     }
   }
 
-  async approveConversation(conversationId: string): Promise<ProcessingResult> {
+  async approveConversation(conversationId: string, approvedByUserId?: string): Promise<ProcessingResult> {
     const conversation = await this.requireConversation(conversationId);
+    if (approvedByUserId) {
+      await this.repository.updateConversation(conversation.id, { approvedByUserId });
+    }
     if (!conversation.proposedDate || !conversation.proposedTime) {
       await this.repository.updateConversation(conversation.id, {
         status: "missing_information",
@@ -114,10 +125,23 @@ export class ConversationService {
     return this.scheduleConversation(conversation, extraction, conversation.client?.phone ?? "", "manual approval", "admin");
   }
 
-  async rejectConversation(conversationId: string): Promise<ProcessingResult> {
+  async listConversations(filter: ConversationListFilter): Promise<ConversationListResult> {
+    return this.repository.listConversations(filter);
+  }
+
+  async listRecentCalendarEvents(limit: number): Promise<CalendarEventView[]> {
+    const events = await this.repository.listRecentCalendarEvents(limit);
+    return events.map((event) => ({
+      ...event,
+      calendarLink: buildCalendarLink(event.googleEventId, this.config.googleCalendarId)
+    }));
+  }
+
+  async rejectConversation(conversationId: string, rejectedByUserId?: string): Promise<ProcessingResult> {
     await this.repository.updateConversation(conversationId, {
       status: "cancelled",
-      suggestedReply: "Agenda rechazada manualmente."
+      suggestedReply: "Agenda rechazada manualmente.",
+      ...(rejectedByUserId ? { rejectedByUserId } : {})
     });
     return { conversationId, status: "cancelled", calendarEventCreated: false };
   }
@@ -252,6 +276,12 @@ export class ConversationService {
     }
     return conversation;
   }
+}
+
+function buildCalendarLink(googleEventId: string | null, calendarId: string): string | null {
+  if (!googleEventId) return null;
+  const eid = Buffer.from(`${googleEventId} ${calendarId}`).toString("base64").replace(/=+$/, "");
+  return `https://www.google.com/calendar/event?eid=${eid}`;
 }
 
 function statusFromExtraction(extraction: SchedulingIntent): string {

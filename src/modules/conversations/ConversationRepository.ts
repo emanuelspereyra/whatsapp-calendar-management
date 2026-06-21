@@ -7,6 +7,11 @@ export type ClientRecord = {
   email?: string | null;
 };
 
+export type AuditUserRecord = {
+  id: string;
+  username: string;
+};
+
 export type ConversationRecord = {
   id: string;
   clientId: string;
@@ -18,7 +23,11 @@ export type ConversationRecord = {
   proposedTopic: string | null;
   suggestedReply: string | null;
   lastError: string | null;
+  approvedByUserId?: string | null;
+  rejectedByUserId?: string | null;
   client?: ClientRecord;
+  approvedBy?: AuditUserRecord | null;
+  rejectedBy?: AuditUserRecord | null;
 };
 
 export type MessageRecord = {
@@ -41,6 +50,8 @@ export type ConversationUpdate = Partial<{
   proposedTopic: string | null;
   suggestedReply: string | null;
   lastError: string | null;
+  approvedByUserId: string | null;
+  rejectedByUserId: string | null;
 }>;
 
 export type MessageCreate = {
@@ -63,14 +74,39 @@ export type CalendarEventCreate = {
   status: CalendarEventStatus | string;
 };
 
+export type ConversationListFilter = {
+  status?: (ConversationStatus | string)[];
+  skip?: number;
+  take?: number;
+};
+
+export type ConversationListResult = {
+  data: ConversationRecord[];
+  total: number;
+};
+
+export type CalendarEventRecord = {
+  id: string;
+  conversationId: string;
+  googleEventId: string | null;
+  title: string;
+  startDateTime: Date;
+  endDateTime: Date;
+  status: CalendarEventStatus | string;
+  createdAt: Date;
+  client?: ClientRecord;
+};
+
 export interface ConversationRepository {
   findOrCreateClient(phone: string, name?: string): Promise<ClientRecord>;
   findOrCreateActiveConversation(clientId: string): Promise<ConversationRecord>;
   findConversationById(id: string): Promise<ConversationRecord | null>;
+  listConversations(filter: ConversationListFilter): Promise<ConversationListResult>;
   updateConversation(id: string, data: ConversationUpdate): Promise<ConversationRecord>;
   appendMessage(input: MessageCreate): Promise<MessageRecord>;
   getRecentMessages(conversationId: string, limit: number): Promise<MessageRecord[]>;
   createCalendarEvent(input: CalendarEventCreate): Promise<void>;
+  listRecentCalendarEvents(limit: number): Promise<CalendarEventRecord[]>;
 }
 
 export class PrismaConversationRepository implements ConversationRepository {
@@ -91,26 +127,44 @@ export class PrismaConversationRepository implements ConversationRepository {
         status: { in: ["idle", "collecting_information", "pending_confirmation", "missing_information", "failed"] }
       },
       orderBy: { updatedAt: "desc" },
-      include: { client: true }
+      include: { client: true, approvedBy: true, rejectedBy: true }
     });
 
     if (active) return active;
 
     return this.prisma.conversation.create({
       data: { clientId, status: "idle" },
-      include: { client: true }
+      include: { client: true, approvedBy: true, rejectedBy: true }
     });
   }
 
   async findConversationById(id: string): Promise<ConversationRecord | null> {
-    return this.prisma.conversation.findUnique({ where: { id }, include: { client: true } });
+    return this.prisma.conversation.findUnique({
+      where: { id },
+      include: { client: true, approvedBy: true, rejectedBy: true }
+    });
+  }
+
+  async listConversations(filter: ConversationListFilter): Promise<ConversationListResult> {
+    const where = filter.status?.length ? { status: { in: filter.status as ConversationStatus[] } } : {};
+    const [data, total] = await Promise.all([
+      this.prisma.conversation.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip: filter.skip ?? 0,
+        take: filter.take ?? 20,
+        include: { client: true, approvedBy: true, rejectedBy: true }
+      }),
+      this.prisma.conversation.count({ where })
+    ]);
+    return { data, total };
   }
 
   async updateConversation(id: string, data: ConversationUpdate): Promise<ConversationRecord> {
     return this.prisma.conversation.update({
       where: { id },
       data: data as any,
-      include: { client: true }
+      include: { client: true, approvedBy: true, rejectedBy: true }
     });
   }
 
@@ -149,5 +203,24 @@ export class PrismaConversationRepository implements ConversationRepository {
         status: input.status as CalendarEventStatus
       }
     });
+  }
+
+  async listRecentCalendarEvents(limit: number): Promise<CalendarEventRecord[]> {
+    const rows = await this.prisma.calendarEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: { conversation: { include: { client: true } } }
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      conversationId: row.conversationId,
+      googleEventId: row.googleEventId,
+      title: row.title,
+      startDateTime: row.startDateTime,
+      endDateTime: row.endDateTime,
+      status: row.status,
+      createdAt: row.createdAt,
+      client: row.conversation?.client ?? undefined
+    }));
   }
 }
