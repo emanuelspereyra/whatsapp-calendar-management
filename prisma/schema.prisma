@@ -43,6 +43,11 @@ enum HealthStatus {
   down
 }
 
+enum UserRole {
+  admin
+  viewer
+}
+
 model Client {
   id            String         @id @default(uuid())
   phone         String         @unique
@@ -64,11 +69,15 @@ model Conversation {
   proposedTopic           String?
   suggestedReply          String?
   lastError               String?
+  approvedByUserId        String?
+  rejectedByUserId        String?
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
   client                  Client             @relation(fields: [clientId], references: [id])
   messages                Message[]
   calendarEvents          CalendarEvent[]
+  approvedBy              User?              @relation("ApprovedConversations", fields: [approvedByUserId], references: [id])
+  rejectedBy              User?              @relation("RejectedConversations", fields: [rejectedByUserId], references: [id])
 
   @@index([clientId, status])
 }
@@ -104,6 +113,18 @@ model CalendarEvent {
   @@index([conversationId])
 }
 
+model User {
+  id                     String         @id @default(uuid())
+  username               String         @unique
+  passwordHash           String
+  role                   UserRole       @default(viewer)
+  tokenVersion           Int            @default(0)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  approvedConversations  Conversation[] @relation("ApprovedConversations")
+  rejectedConversations  Conversation[] @relation("RejectedConversations")
+}
+
 model HealthCheckLog {
   id          String       @id @default(uuid())
   serviceName String
@@ -112,4 +133,12 @@ model HealthCheckLog {
   checkedAt   DateTime     @default(now())
 
   @@index([serviceName, checkedAt])
+}
+
+model RateLimitCounter {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+
+  @@index([resetAt])
 }
