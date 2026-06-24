@@ -54,7 +54,7 @@ export class PrismaUserRepository implements UserRepository {
   async updateRole(id: string, role: UserRole | string): Promise<UserSummary> {
     return this.prisma.user.update({
       where: { id },
-      data: { role: role as UserRole },
+      data: { role: role as UserRole, tokenVersion: { increment: 1 } },
       select: { id: true, username: true, role: true, createdAt: true }
     });
   }

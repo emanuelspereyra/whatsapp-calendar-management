@@ -192,12 +192,14 @@ describe("HTTP routes", () => {
 });
 
 describe("auth", () => {
-  it("registers the first user without a code and returns a token", async () => {
+  it("requires the registration code for the first user and returns an admin token", async () => {
     const { app } = buildAppHarness();
+
+    await request(app).post("/auth/register").send({ username: "owner", password: "supersecret" }).expect(403);
 
     const response = await request(app)
       .post("/auth/register")
-      .send({ username: "owner", password: "supersecret" })
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
       .expect(201);
 
     expect(response.body.token).toBeTruthy();
@@ -207,7 +209,10 @@ describe("auth", () => {
 
   it("requires the registration code for subsequent users and grants them the viewer role", async () => {
     const { app } = buildAppHarness();
-    await request(app).post("/auth/register").send({ username: "owner", password: "supersecret" }).expect(201);
+    await request(app)
+      .post("/auth/register")
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
+      .expect(201);
 
     await request(app).post("/auth/register").send({ username: "second", password: "supersecret" }).expect(403);
     const second = await request(app)
@@ -220,7 +225,10 @@ describe("auth", () => {
 
   it("blocks viewers from approving or rejecting conversations", async () => {
     const { app } = buildAppHarness();
-    await request(app).post("/auth/register").send({ username: "owner", password: "supersecret" }).expect(201);
+    await request(app)
+      .post("/auth/register")
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
+      .expect(201);
     const viewer = await request(app)
       .post("/auth/register")
       .send({ username: "second", password: "supersecret", code: "invite-code" })
@@ -239,7 +247,10 @@ describe("auth", () => {
 
   it("logs in and reaches admin endpoints with the bearer token", async () => {
     const { app } = buildAppHarness();
-    await request(app).post("/auth/register").send({ username: "owner", password: "supersecret" }).expect(201);
+    await request(app)
+      .post("/auth/register")
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
+      .expect(201);
 
     const login = await request(app)
       .post("/auth/login")
@@ -254,16 +265,19 @@ describe("auth", () => {
 
   it("rejects login with the wrong password", async () => {
     const { app } = buildAppHarness();
-    await request(app).post("/auth/register").send({ username: "owner", password: "supersecret" }).expect(201);
+    await request(app)
+      .post("/auth/register")
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
+      .expect(201);
 
-    await request(app).post("/auth/login").send({ username: "owner", password: "nope-nope" }).expect(401);
+    await request(app).post("/auth/login").send({ username: "owner", password: "incorrect-secret" }).expect(401);
   });
 
   it("revoking a user's sessions invalidates their existing token", async () => {
     const { app } = buildAppHarness();
     const owner = await request(app)
       .post("/auth/register")
-      .send({ username: "owner", password: "supersecret" })
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
       .expect(201);
 
     await request(app)
@@ -291,7 +305,7 @@ describe("user management", () => {
 
     const owner = await request(app)
       .post("/auth/register")
-      .send({ username: "owner", password: "supersecret" })
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
       .expect(201);
 
     const list = await request(app)
@@ -317,7 +331,7 @@ describe("user management", () => {
     const { app } = buildAppHarness();
     const owner = await request(app)
       .post("/auth/register")
-      .send({ username: "owner", password: "supersecret" })
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
       .expect(201);
     const viewer = await request(app)
       .post("/auth/register")
@@ -337,21 +351,39 @@ describe("user management", () => {
       .expect(200);
 
     await request(app)
+      .get("/admin/users")
+      .set("authorization", `Bearer ${viewer.body.token}`)
+      .expect(401);
+
+    const promotedViewer = await request(app)
+      .post("/auth/login")
+      .send({ username: "second", password: "supersecret" })
+      .expect(200);
+
+    await request(app)
       .patch(`/admin/users/${owner.body.userId}/role`)
-      .set("authorization", `Bearer ${owner.body.token}`)
+      .set("authorization", `Bearer ${promotedViewer.body.token}`)
       .send({ role: "viewer" })
       .expect(200);
 
     await request(app)
-      .patch(`/admin/users/${viewer.body.userId}/role`)
+      .get("/admin/users")
       .set("authorization", `Bearer ${owner.body.token}`)
+      .expect(401);
+
+    await request(app)
+      .patch(`/admin/users/${viewer.body.userId}/role`)
+      .set("authorization", `Bearer ${promotedViewer.body.token}`)
       .send({ role: "viewer" })
       .expect(409);
   });
 
   it("blocks viewers from listing or changing users", async () => {
     const { app } = buildAppHarness();
-    await request(app).post("/auth/register").send({ username: "owner", password: "supersecret" }).expect(201);
+    await request(app)
+      .post("/auth/register")
+      .send({ username: "owner", password: "supersecret", code: "invite-code" })
+      .expect(201);
     const viewer = await request(app)
       .post("/auth/register")
       .send({ username: "second", password: "supersecret", code: "invite-code" })

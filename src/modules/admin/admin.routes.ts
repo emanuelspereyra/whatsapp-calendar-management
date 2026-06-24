@@ -89,6 +89,8 @@ export function createAdminRouter(
           throw new AppError("No se puede quitar el rol admin al único administrador", 409, true);
         }
       }
+      // updateRole also bumps tokenVersion, invalidating existing tokens for this
+      // user — role is embedded in the JWT, so stale tokens must stop working.
       res.json(await users.updateRole(id, body.role));
     } catch (error) {
       next(error instanceof z.ZodError ? new AppError("Rol inválido", 400, true) : error);

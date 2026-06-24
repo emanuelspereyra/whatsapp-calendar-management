@@ -28,14 +28,12 @@ export class AuthService {
       throw new AppError("El usuario ya existe", 409, true);
     }
 
-    const userCount = await this.users.countUsers();
-    let role: "admin" | "viewer" = "admin";
-    if (userCount > 0) {
-      if (!this.config.registrationCode || code !== this.config.registrationCode) {
-        throw new AppError("Código de registro inválido", 403, true);
-      }
-      role = "viewer";
+    if (!this.config.registrationCode || code !== this.config.registrationCode) {
+      throw new AppError("Codigo de registro invalido", 403, true);
     }
+
+    const userCount = await this.users.countUsers();
+    const role: "admin" | "viewer" = userCount === 0 ? "admin" : "viewer";
 
     const passwordHash = await this.hashPassword(password);
     const user = await this.users.createUser(normalized, passwordHash, role);
@@ -75,7 +73,7 @@ export class AuthService {
       throw new AppError("Sesión revocada, volvé a iniciar sesión", 401, true);
     }
 
-    return { sub: user.id, username: payload.username!, role: payload.role! };
+    return { sub: user.id, username: user.username, role: String(user.role) };
   }
 
   async revokeUserSessions(userId: string): Promise<void> {

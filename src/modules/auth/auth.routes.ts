@@ -6,8 +6,8 @@ import type { RateLimiter } from "../ratelimit/RateLimiter";
 import type { AuthService } from "./AuthService";
 
 const credentialsSchema = z.object({
-  username: z.string().min(3).max(64),
-  password: z.string().min(8).max(128)
+  username: z.string().trim().min(3).max(64).regex(/^[a-zA-Z0-9._-]+$/),
+  password: z.string().min(10).max(128)
 });
 
 const registerSchema = credentialsSchema.extend({
@@ -41,7 +41,7 @@ export function createAuthRouter(auth: AuthService, rateLimiter: RateLimiter): R
 
 function toAppError(error: unknown): unknown {
   if (error instanceof z.ZodError) {
-    return new AppError("Usuario o contraseña inválidos (mín. 3 y 8 caracteres)", 400, true);
+    return new AppError("Usuario o contrasena invalidos", 400, true);
   }
   return error;
 }

@@ -204,6 +204,7 @@ export class InMemoryUserRepository implements UserRepository {
     const user = this.users.find((u) => u.id === id);
     if (!user) throw new Error(`missing user ${id}`);
     user.role = role;
+    user.tokenVersion += 1;
     return { id: user.id, username: user.username, role: user.role, createdAt: new Date() };
   }
 

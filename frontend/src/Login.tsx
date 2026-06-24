@@ -61,14 +61,14 @@ export function Login({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
-            minLength={8}
+            minLength={10}
             required
           />
         </label>
         {mode === "register" && (
           <label>
             Código de invitación
-            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Vacío si sos el primer usuario" />
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Codigo de invitacion" required />
           </label>
         )}
 

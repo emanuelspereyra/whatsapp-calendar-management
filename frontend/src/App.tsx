@@ -1,6 +1,7 @@
 import "./App.css";
 import { AgendasPanel } from "./AgendasPanel";
 import { ConversationsPanel } from "./ConversationsPanel";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { HealthPanel } from "./HealthPanel";
 import { Login } from "./Login";
 import { ThemeToggle } from "./ThemeToggle";
@@ -29,10 +30,20 @@ function App() {
         </div>
       </header>
       <main>
-        <HealthPanel token={token} />
-        <AgendasPanel token={token} />
-        <ConversationsPanel token={token} role={role} />
-        {role === "admin" && <UsersPanel token={token} currentUserId={userId} />}
+        <ErrorBoundary>
+          <HealthPanel token={token} />
+        </ErrorBoundary>
+        <ErrorBoundary>
+          <AgendasPanel token={token} />
+        </ErrorBoundary>
+        <ErrorBoundary>
+          <ConversationsPanel token={token} role={role} />
+        </ErrorBoundary>
+        {role === "admin" && (
+          <ErrorBoundary>
+            <UsersPanel token={token} currentUserId={userId} />
+          </ErrorBoundary>
+        )}
       </main>
     </div>
   );

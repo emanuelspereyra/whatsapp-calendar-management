@@ -13,9 +13,9 @@ cp .env.example .env   # ajustar VITE_API_BASE_URL si el backend no corre en loc
 npm run dev
 ```
 
-Abre `http://localhost:5173`. La primera vez, registrá un usuario: queda como **admin** automáticamente y sin código. Los registros siguientes requieren `REGISTRATION_CODE` y quedan como **viewer** (pueden ver todo pero no aprobar/rechazar agendas). El login devuelve un JWT (vence a las 12h) que se guarda en el navegador (localStorage) y se envía como `Authorization: Bearer` en cada request; al expirar, el frontend cierra la sesión automáticamente. El backend debe permitir ese origen vía `ADMIN_FRONTEND_ORIGIN` (por defecto `http://localhost:5173`).
+Abre `http://localhost:5173`. Para registrar usuarios siempre se requiere `REGISTRATION_CODE`: el primer usuario queda como **admin** y los siguientes quedan como **viewer** (pueden ver todo pero no aprobar/rechazar agendas). El login devuelve un JWT (vence a las 12h) que se guarda en el navegador (localStorage) y se envía como `Authorization: Bearer` en cada request; al expirar, el frontend cierra la sesión automáticamente. El backend debe permitir ese origen vía `ADMIN_FRONTEND_ORIGIN` (por defecto `http://localhost:5173`).
 
-El panel de "Últimas agendas" muestra las 10 reservas más recientes (cliente, fecha/hora de la clase, estado, tema) con un link directo al evento de Google Calendar.
+El panel de "Últimas agendas" muestra las 10 reservas más recientes (cliente, fecha/hora de la clase, estado, tema) con un link directo al evento de Google Calendar. El panel de conversaciones muestra quién aprobó o rechazó cada una. Los usuarios `admin` además ven un panel de "Usuarios" para cambiar roles y revocar sesiones.
 
 ## Arquitectura
 
@@ -77,9 +77,9 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/whatsapp_calendar
 
 ADMIN_API_KEY=replace-with-a-long-random-secret
 ADMIN_PHONE=5491111111111
-ADMIN_FRONTEND_ORIGIN=http://localhost:5173
+ADMIN_FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
 JWT_SECRET=replace-with-a-long-random-secret
-REGISTRATION_CODE=optional-invite-code-for-additional-users
+REGISTRATION_CODE=replace-with-a-private-registration-code
 ALERTS_ENABLED=false
 AUTO_REPLY=false
 STRICT_PREFLIGHT=false
@@ -115,9 +115,9 @@ DATABASE_URL=postgresql://postgres:postgres@postgres:5432/whatsapp_calendar
 - `DATABASE_URL`: conexion de PostgreSQL. Usar `localhost` si la app corre fuera de Docker; usar `postgres` si corre dentro de `docker compose`.
 - `ADMIN_API_KEY`: secreto largo para proteger endpoints `/admin`. Enviar en el header `x-admin-api-key`.
 - `ADMIN_PHONE`: telefono WhatsApp del administrador, con codigo de pais, sin `+`. Es obligatorio si `ALERTS_ENABLED=true`.
-- `ADMIN_FRONTEND_ORIGIN`: origen permitido por CORS para el frontend admin (ver [`frontend/`](frontend)).
+- `ADMIN_FRONTEND_ORIGIN`: origen permitido por CORS para el frontend admin (ver [`frontend/`](frontend)). Puede aceptar varios origenes separados por coma; no usar `*`.
 - `JWT_SECRET`: secreto largo y aleatorio para firmar los tokens de login del dashboard. Obligatorio.
-- `REGISTRATION_CODE`: código de invitación requerido para registrar usuarios después del primero. Si queda vacío, solo se puede registrar el primer usuario.
+- `REGISTRATION_CODE`: código de invitación obligatorio para registrar cualquier usuario. El primer usuario queda como `admin`; los siguientes quedan como `viewer`.
 - `ALERTS_ENABLED`: `true` envia alertas; `false` solo deja logs.
 - `AUTO_REPLY`: `true` permite responder al cliente por WhatsApp; `false` no envia mensajes automaticos al cliente.
 - `STRICT_PREFLIGHT`: `true` bloquea el inicio si una dependencia falla; `false` permite iniciar en modo degraded. Para primera configuracion conviene `false`.
@@ -224,8 +224,10 @@ Procesa mensajes de texto, audio, status events y payloads desconocidos. Los des
 
 Públicos (no requieren credenciales). Devuelven `{ token, username }`.
 
-- `POST /auth/register` — body `{ username, password, code? }`. El primer usuario no necesita `code` y queda con rol `admin`; los siguientes requieren `REGISTRATION_CODE` y quedan con rol `viewer`.
-- `POST /auth/login` — body `{ username, password }`. Ambos devuelven `{ token, username, role }`. El token vence a las 12 horas.
+- `POST /auth/register` — body `{ username, password, code }`. Requiere `REGISTRATION_CODE`; el primer usuario queda con rol `admin` y los siguientes quedan con rol `viewer`.
+- `POST /auth/login` — body `{ username, password }`. Ambos devuelven `{ token, userId, username, role }`. El token vence a las 12 horas.
+
+Ambos endpoints están protegidos por un rate limit persistente (20 intentos/minuto por IP, contador guardado en Postgres — sobrevive reinicios y se comparte entre instancias).
 
 ### Admin
 
@@ -240,10 +242,15 @@ x-admin-api-key: <ADMIN_API_KEY>
 ```
 
 - `POST /admin/healthcheck/run` — rol `admin`.
-- `GET /admin/conversations?status=<estado>&skip=<n>&take=<n>` — listado paginado. Cualquier rol.
+- `GET /admin/conversations?status=<estado>&skip=<n>&take=<n>` — listado paginado, incluye `approvedByUserId`/`rejectedByUserId` (y los objetos `approvedBy`/`rejectedBy` con el username) para saber quién gestionó cada conversación. Cualquier rol.
 - `GET /admin/calendar-events?limit=<n>` — últimas agendas con datos del cliente y link a Google Calendar. Cualquier rol.
-- `POST /admin/conversations/:id/approve` — rol `admin`.
-- `POST /admin/conversations/:id/reject` — rol `admin`.
+- `POST /admin/conversations/:id/approve` — rol `admin`. Registra qué usuario aprobó.
+- `POST /admin/conversations/:id/reject` — rol `admin`. Registra qué usuario rechazó.
+- `GET /admin/users` — rol `admin`. Lista usuarios con su rol y fecha de creación.
+- `PATCH /admin/users/:id/role` — rol `admin`, body `{ role: "admin" | "viewer" }`. Cambia el rol e invalida cualquier sesión existente de ese usuario (el rol viaja en el JWT, así que un token viejo no debe seguir actuando con el rol anterior). Devuelve `409` si se intenta quitarle `admin` al único administrador restante.
+- `POST /admin/users/:id/revoke` — rol `admin`. Invalida todas las sesiones activas de ese usuario (debe volver a iniciar sesión).
+
+Todos los endpoints `/admin/*` comparten el mismo rate limit persistente (60 req/min por IP).
 
 Los usuarios `viewer` pueden ver el dashboard pero reciben `403` si intentan aprobar/rechazar o disparar el healthcheck manual.
 

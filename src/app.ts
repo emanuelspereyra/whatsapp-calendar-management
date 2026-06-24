@@ -76,7 +76,10 @@ export function createApp(config: AppConfig = loadEnv(), deps: AppDependencies =
   app.disable("x-powered-by");
   app.use(
     cors({
-      origin: config.adminFrontendOrigin,
+      origin: config.adminFrontendOrigin
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean),
       methods: ["GET", "POST", "PATCH"],
       allowedHeaders: ["Content-Type", "x-admin-api-key", "Authorization"]
     })

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import type { AppConfig } from "../../config/env";
 import { AppError } from "../../utils/errors";
@@ -19,7 +20,7 @@ declare module "express-serve-static-core" {
 export function createRequireAuth(config: AppConfig, auth: AuthService) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const apiKey = req.header("x-admin-api-key");
-    if (config.adminApiKey && apiKey === config.adminApiKey) {
+    if (safeEqualSecret(apiKey, config.adminApiKey)) {
       req.authRole = "admin";
       next();
       return;
@@ -48,4 +49,11 @@ export function requireAdminRole(req: Request, _res: Response, next: NextFunctio
     return;
   }
   next();
+}
+
+function safeEqualSecret(value: string | undefined, expected: string): boolean {
+  if (!value || !expected) return false;
+  const valueBuffer = Buffer.from(value);
+  const expectedBuffer = Buffer.from(expected);
+  return valueBuffer.length === expectedBuffer.length && timingSafeEqual(valueBuffer, expectedBuffer);
 }
