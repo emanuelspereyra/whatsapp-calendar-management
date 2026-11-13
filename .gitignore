@@ -6,3 +6,10 @@ coverage/
 .claude/
 storage/audio/*
 !storage/audio/.gitkeep
+
+# Configuración local de agentes de IA: puede guardar comandos con secretos.
+# No versionar; si hace falta compartir algo, revisarlo antes.
+.codex/
+.opencode/
+.gemini/
+.aider*
